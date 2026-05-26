@@ -1,0 +1,51 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700&display=swap');
+
+html, body {
+  background: #0a0a0a;
+  color: #f5f5f5;
+  font-family: 'Inter', system-ui, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: none;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+.feed-container {
+  scroll-snap-type: y mandatory;
+  overflow-y: scroll;
+  height: 100vh;
+  height: 100dvh;
+}
+
+.feed-card {
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+}
+
+.no-tap-callout {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Allow long-press to save on images */
+.savable-image {
+  -webkit-touch-callout: default;
+  touch-action: manipulation;
+}
+
+@keyframes firePop {
+  0% { transform: scale(0) rotate(-20deg); opacity: 0; }
+  50% { transform: scale(1.4) rotate(10deg); opacity: 1; }
+  100% { transform: scale(1) rotate(0deg); opacity: 0; }
+}
+
+.fire-pop {
+  animation: firePop 0.8s ease-out forwards;
+}
