@@ -4,7 +4,7 @@ import StickerEditor from '../components/StickerEditor';
 import { useAuth } from '../lib/useAuth';
 
 export default function Yesterday() {
-  const { user, isSpectator, isCrownHolder, crownHolderName, todaySticker, loading } = useAuth();
+  const { user, isSpectator, isCrownHolder, todaySticker, loading } = useAuth();
   const [photos, setPhotos] = useState([]);
   const [votesUsed, setVotesUsed] = useState(0);
   const [toast, setToast] = useState('');
@@ -46,7 +46,6 @@ export default function Yesterday() {
   }
 
   const stickerUrl = todaySticker === 'A' ? '/sticker-a.png' : '/sticker-b.png';
-  const stickerButtonLabel = crownHolderName ? `ADD ${crownHolderName.toUpperCase()}` : 'STICKER';
 
   if (loading || !user) {
     return <Layout><div className="p-6 text-zinc-500">Loading...</div></Layout>;
@@ -75,7 +74,6 @@ export default function Yesterday() {
               onVote={vote}
               isCrownHolder={isCrownHolder}
               isSpectator={isSpectator}
-              stickerButtonLabel={stickerButtonLabel}
               onSticker={() => setEditorPhoto(p)}
             />
           ))}
@@ -101,7 +99,7 @@ export default function Yesterday() {
   );
 }
 
-function PhotoCard({ photo, votesUsed, onVote, isCrownHolder, isSpectator, stickerButtonLabel, onSticker }) {
+function PhotoCard({ photo, votesUsed, onVote, isCrownHolder, isSpectator, onSticker }) {
   const lastTap = useRef(0);
   const [showFire, setShowFire] = useState(false);
 
@@ -136,7 +134,7 @@ function PhotoCard({ photo, votesUsed, onVote, isCrownHolder, isSpectator, stick
               onClick={(e) => { e.stopPropagation(); onSticker(); }}
               className="px-3 py-1.5 bg-yellow-500 text-black rounded-full text-[10px] font-bold uppercase tracking-wider"
             >
-              👑 {stickerButtonLabel}
+              👑 ADD YUFANG
             </button>
           )}
           {!isSpectator && (

@@ -1,18 +1,27 @@
 // Daily cycle logic. Called by /api/cycle/check on every app load.
 // Self-healing: if no one opens the app at 07:00, the cycle runs on next load.
+//
+// Race condition protection: we insert the day_cycles row FIRST as a "lock".
+// The UNIQUE(date) constraint means only one request can succeed if two run
+// simultaneously - the other gets an error and bails before doing any work.
 
 import { getServerSupabase } from './supabaseServer';
-import { getCurrentCycleDate, getPreviousCycleDate } from './time';
+import { getCurrentCycleDate } from './time';
 
-// Run the cycle if needed. Returns { ran: boolean, todayCycle: string }
-export async function runCycleIfNeeded() {
+/**
+ * Run the cycle if no cycle exists for today.
+ * @param {object} opts
+ * @param {'A'|'B'} [opts.forceSticker] - override sticker selection (used by dev tools).
+ *   In production this is never used; the alternation is automatic.
+ */
+export async function runCycleIfNeeded(opts = {}) {
   const supabase = getServerSupabase();
-  const today = getCurrentCycleDate(); // The cycle currently "active" (today's batch is being uploaded)
+  const today = getCurrentCycleDate();
 
-  // Has a cycle record been created for today already?
+  // 1. Bail early if a cycle for today already exists.
   const { data: existing } = await supabase
     .from('day_cycles')
-    .select('*')
+    .select('id')
     .eq('date', today)
     .maybeSingle();
 
@@ -20,93 +29,97 @@ export async function runCycleIfNeeded() {
     return { ran: false, todayCycle: today };
   }
 
-  // We need to run the cycle. This means:
-  //  - "yesterday" batch becomes "archived"
-  //  - "today" batch becomes "yesterday"
-  //  - new "today" cycle is recorded
+  // 2. Determine the new sticker BEFORE the lock insert.
+  //    Look at the most recent PRIOR cycle (excluding today, in case of dev tools).
+  let newSticker;
+  if (opts.forceSticker === 'A' || opts.forceSticker === 'B') {
+    newSticker = opts.forceSticker;
+  } else {
+    const { data: lastCycle } = await supabase
+      .from('day_cycles')
+      .select('sticker_of_the_day')
+      .lt('date', today)
+      .order('date', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    // If no prior cycle exists, default to 'A'. Otherwise alternate.
+    newSticker = lastCycle?.sticker_of_the_day === 'A' ? 'B' : 'A';
+  }
 
-  // 1. Find what was previously the yesterday batch and pick its winner
-  //    The previous "yesterday" batch's upload_date is the date BEFORE the previous cycle ran.
-  //    Easiest: among all photos with status='yesterday', pick the winner.
+  // 3. Insert as a lock. UNIQUE constraint on date prevents double-run.
+  const { data: cycleRow, error: insErr } = await supabase
+    .from('day_cycles')
+    .insert({ date: today, sticker_of_the_day: newSticker })
+    .select()
+    .single();
+
+  if (insErr) {
+    // Another concurrent request won the race. Bail out cleanly.
+    return { ran: false, todayCycle: today, raced: true };
+  }
+
+  // 4. We hold the lock now. Do the cycle work.
+
+  // 4a. Find yesterday's winner (highest votes, earliest upload as tiebreak).
   const { data: yesterdayPhotos } = await supabase
     .from('photos')
-    .select('*')
+    .select('id, user_id, vote_count')
     .eq('status', 'yesterday')
     .order('vote_count', { ascending: false })
     .order('uploaded_at', { ascending: true });
 
   let winnerId = null;
-  if (yesterdayPhotos && yesterdayPhotos.length > 0) {
-    const topVotes = yesterdayPhotos[0].vote_count;
-    if (topVotes > 0) {
-      // First photo after sorting is the winner (highest votes, earliest upload as tiebreak)
-      const winner = yesterdayPhotos[0];
-      winnerId = winner.id;
+  if (yesterdayPhotos && yesterdayPhotos.length > 0 && yesterdayPhotos[0].vote_count > 0) {
+    const winner = yesterdayPhotos[0];
+    winnerId = winner.id;
 
-      // Mark winner
-      await supabase
-        .from('photos')
-        .update({ won_photo_of_the_day: true })
-        .eq('id', winner.id);
+    await supabase
+      .from('photos')
+      .update({ won_photo_of_the_day: true })
+      .eq('id', winner.id);
 
-      // Increment uploader's wins
-      const { data: uploader } = await supabase
-        .from('users')
-        .select('total_wins')
-        .eq('id', winner.user_id)
-        .single();
+    // Increment winner's total_wins (refetch to avoid stale-value race)
+    const { data: uploader } = await supabase
+      .from('users')
+      .select('total_wins')
+      .eq('id', winner.user_id)
+      .single();
 
-      await supabase
-        .from('users')
-        .update({
-          total_wins: (uploader?.total_wins || 0) + 1,
-          last_win_at: new Date().toISOString(),
-        })
-        .eq('id', winner.user_id);
-    }
+    await supabase
+      .from('users')
+      .update({
+        total_wins: (uploader?.total_wins || 0) + 1,
+        last_win_at: new Date().toISOString(),
+      })
+      .eq('id', winner.user_id);
   }
 
-  // 2. Archive the old yesterday batch
-  await supabase
-    .from('photos')
-    .update({ status: 'archived' })
-    .eq('status', 'yesterday');
+  // 4b. Archive yesterday → archived. (idempotent)
+  await supabase.from('photos').update({ status: 'archived' }).eq('status', 'yesterday');
 
-  // 3. Promote today batch to yesterday
-  await supabase
-    .from('photos')
-    .update({ status: 'yesterday' })
-    .eq('status', 'today');
+  // 4c. Promote today → yesterday. (idempotent)
+  await supabase.from('photos').update({ status: 'yesterday' }).eq('status', 'today');
 
-  // 4. Wipe votes (fires refresh)
+  // 4d. Wipe all votes (refresh everyone's 2 fires).
   await supabase.from('votes').delete().neq('id', 0);
 
-  // 5. Determine today's sticker (alternates A/B)
-  const { data: lastCycle } = await supabase
-    .from('day_cycles')
-    .select('sticker_of_the_day')
-    .order('date', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  const newSticker = lastCycle?.sticker_of_the_day === 'A' ? 'B' : 'A';
-
-  // 6. Record the new cycle
-  await supabase.from('day_cycles').insert({
-    date: today,
-    photo_of_the_day_id: winnerId,
-    sticker_of_the_day: newSticker,
-  });
+  // 4e. Save winner reference on the cycle row.
+  if (winnerId) {
+    await supabase
+      .from('day_cycles')
+      .update({ photo_of_the_day_id: winnerId })
+      .eq('id', cycleRow.id);
+  }
 
   return { ran: true, todayCycle: today, winnerId, sticker: newSticker };
 }
 
-// Get current crown holder (user with most wins, tiebreak by most recent win)
 export async function getCrownHolderId() {
   const supabase = getServerSupabase();
   const { data: users } = await supabase
     .from('users')
     .select('id, total_wins, last_win_at')
+    .eq('is_spectator', false)
     .gt('total_wins', 0)
     .order('total_wins', { ascending: false })
     .order('last_win_at', { ascending: false })
@@ -114,7 +127,6 @@ export async function getCrownHolderId() {
   return users && users.length > 0 ? users[0].id : null;
 }
 
-// Get today's sticker (A or B)
 export async function getTodaySticker() {
   const supabase = getServerSupabase();
   const today = getCurrentCycleDate();
