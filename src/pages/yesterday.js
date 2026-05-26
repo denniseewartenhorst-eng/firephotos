@@ -4,7 +4,7 @@ import StickerEditor from '../components/StickerEditor';
 import { useAuth } from '../lib/useAuth';
 
 export default function Yesterday() {
-  const { user, isCrownHolder, todaySticker, loading } = useAuth();
+  const { user, isSpectator, isCrownHolder, crownHolderName, todaySticker, loading } = useAuth();
   const [photos, setPhotos] = useState([]);
   const [votesUsed, setVotesUsed] = useState(0);
   const [toast, setToast] = useState('');
@@ -22,6 +22,11 @@ export default function Yesterday() {
   useEffect(() => { if (user) load(); }, [user]);
 
   async function vote(photoId, allowSelf = false) {
+    if (isSpectator) {
+      setToast("Spectators can't vote");
+      setTimeout(() => setToast(''), 2000);
+      return;
+    }
     const r = await fetch('/api/photos/vote', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -41,6 +46,7 @@ export default function Yesterday() {
   }
 
   const stickerUrl = todaySticker === 'A' ? '/sticker-a.png' : '/sticker-b.png';
+  const stickerButtonLabel = crownHolderName ? `ADD ${crownHolderName.toUpperCase()}` : 'STICKER';
 
   if (loading || !user) {
     return <Layout><div className="p-6 text-zinc-500">Loading...</div></Layout>;
@@ -68,8 +74,9 @@ export default function Yesterday() {
               votesUsed={votesUsed}
               onVote={vote}
               isCrownHolder={isCrownHolder}
+              isSpectator={isSpectator}
+              stickerButtonLabel={stickerButtonLabel}
               onSticker={() => setEditorPhoto(p)}
-              onReload={load}
             />
           ))}
         </div>
@@ -94,14 +101,14 @@ export default function Yesterday() {
   );
 }
 
-function PhotoCard({ photo, votesUsed, onVote, isCrownHolder, onSticker }) {
+function PhotoCard({ photo, votesUsed, onVote, isCrownHolder, isSpectator, stickerButtonLabel, onSticker }) {
   const lastTap = useRef(0);
   const [showFire, setShowFire] = useState(false);
 
   function handleTap() {
+    if (isSpectator) return;
     const now = Date.now();
     if (now - lastTap.current < 300) {
-      // Double tap
       setShowFire(true);
       setTimeout(() => setShowFire(false), 800);
       onVote(photo.id);
@@ -118,36 +125,38 @@ function PhotoCard({ photo, votesUsed, onVote, isCrownHolder, onSticker }) {
         style={{ maxHeight: '100dvh' }}
       />
 
-      {/* Top overlay bar */}
-      <div className="absolute top-0 left-0 right-0 p-4 flex justify-between items-center bg-gradient-to-b from-black/70 to-transparent z-10 no-tap-callout">
-        <div className="flex items-center gap-2">
-          <span className="font-display text-xl tracking-wider text-white">{photo.uploader_name}</span>
-          {photo.i_voted && <span className="text-orange-500">🔥</span>}
+      <div className="absolute top-0 left-0 right-0 p-3 flex justify-between items-start gap-2 bg-gradient-to-b from-black/70 to-transparent z-10 no-tap-callout">
+        <div className="flex items-center gap-2 flex-shrink min-w-0">
+          <span className="font-display text-xl tracking-wider text-white truncate">{photo.uploader_name}</span>
+          {photo.i_voted && <span className="text-orange-500 flex-shrink-0">🔥</span>}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-shrink-0">
           {isCrownHolder && !photo.has_applied_sticker && (
             <button
               onClick={(e) => { e.stopPropagation(); onSticker(); }}
-              className="w-9 h-9 bg-yellow-500/90 rounded-full flex items-center justify-center text-lg"
+              className="px-3 py-1.5 bg-yellow-500 text-black rounded-full text-[10px] font-bold uppercase tracking-wider"
             >
-              👑
+              👑 {stickerButtonLabel}
             </button>
           )}
-          <div className="flex gap-1 bg-black/50 px-3 py-1.5 rounded-full">
-            <span className={votesUsed >= 1 ? 'opacity-30' : ''}>🔥</span>
-            <span className={votesUsed >= 2 ? 'opacity-30' : ''}>🔥</span>
-          </div>
+          {!isSpectator && (
+            <div className="flex gap-1 bg-black/50 px-3 py-1.5 rounded-full">
+              <span className={votesUsed >= 1 ? 'opacity-30' : ''}>🔥</span>
+              <span className={votesUsed >= 2 ? 'opacity-30' : ''}>🔥</span>
+            </div>
+          )}
+          {isSpectator && (
+            <div className="bg-black/50 px-3 py-1.5 rounded-full text-xs">👁️</div>
+          )}
         </div>
       </div>
 
-      {/* Own photo vote count */}
       {photo.is_own && (
         <div className="absolute bottom-6 right-4 bg-black/60 px-3 py-1 rounded-full text-sm z-10">
           {photo.vote_count} 🔥
         </div>
       )}
 
-      {/* Fire pop animation */}
       {showFire && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-20">
           <div className="text-9xl fire-pop">🔥</div>

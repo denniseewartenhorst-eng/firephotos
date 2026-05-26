@@ -2,8 +2,6 @@ import { getUserIdFromReq } from '../../../lib/auth';
 import { getServerSupabase } from '../../../lib/supabaseServer';
 import { getCurrentCycleDate } from '../../../lib/time';
 
-// Deterministic shuffle seeded by string (user_id + date)
-// so a given user sees the same order across page loads.
 function seededShuffle(arr, seed) {
   const result = [...arr];
   let s = 0;
@@ -23,13 +21,14 @@ export default async function handler(req, res) {
   const supabase = getServerSupabase();
   const today = getCurrentCycleDate();
 
-  // All yesterday photos with uploader name
+  // Exclude spectator photos and votes from feed display
   const { data: photos } = await supabase
     .from('photos')
-    .select('id, user_id, image_url, vote_count, has_applied_sticker, users(name)')
+    .select('id, user_id, image_url, vote_count, has_applied_sticker, users(name, is_spectator)')
     .eq('status', 'yesterday');
 
-  // Current user's votes today
+  const filtered = (photos || []).filter(p => !p.users?.is_spectator);
+
   const { data: myVotes } = await supabase
     .from('votes')
     .select('photo_id, created_at')
@@ -38,8 +37,7 @@ export default async function handler(req, res) {
 
   const votedPhotoIds = (myVotes || []).map(v => v.photo_id);
 
-  // Shape data: hide vote_count unless it's user's own photo
-  const shaped = (photos || []).map(p => ({
+  const shaped = filtered.map(p => ({
     id: p.id,
     image_url: p.image_url,
     uploader_name: p.users?.name || 'Unknown',

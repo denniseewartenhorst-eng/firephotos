@@ -15,20 +15,32 @@ export default async function handler(req, res) {
   if (!imageBase64) return res.status(400).json({ error: 'No image' });
 
   const supabase = getServerSupabase();
+
+  // Check spectator
+  const { data: user } = await supabase
+    .from('users')
+    .select('is_spectator')
+    .eq('id', userId)
+    .maybeSingle();
+  if (!user || user.is_spectator) {
+    return res.status(403).json({ error: 'Spectators cannot upload' });
+  }
+
   const today = getCurrentCycleDate();
 
-  // Check user hasn't exceeded 3 today
+  // Count only current-day's TODAY-status photos (this fixes the leftover-photos bug
+  // after a manual day skip — old photos still have today's calendar date but status='yesterday')
   const { count } = await supabase
     .from('photos')
     .select('*', { count: 'exact', head: true })
     .eq('user_id', userId)
-    .eq('upload_date', today);
+    .eq('upload_date', today)
+    .eq('status', 'today');
 
   if ((count || 0) >= 3) {
     return res.status(400).json({ error: 'You already uploaded 3 photos today' });
   }
 
-  // Convert base64 to buffer
   const matches = imageBase64.match(/^data:(image\/[a-z+]+);base64,(.+)$/);
   if (!matches) return res.status(400).json({ error: 'Invalid image format' });
   const mime = matches[1];

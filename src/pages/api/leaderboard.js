@@ -8,7 +8,8 @@ export default async function handler(req, res) {
   const supabase = getServerSupabase();
   const { data: users } = await supabase
     .from('users')
-    .select('id, name, total_wins, last_win_at')
+    .select('id, name, total_wins, last_win_at, is_spectator')
+    .eq('is_spectator', false)
     .order('total_wins', { ascending: false })
     .order('last_win_at', { ascending: false, nullsFirst: false });
 

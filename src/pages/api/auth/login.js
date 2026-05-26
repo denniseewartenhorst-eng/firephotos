@@ -11,41 +11,25 @@ export default async function handler(req, res) {
   }
 
   const cleanName = String(name).trim();
-  if (cleanName.length < 1 || cleanName.length > 30) {
-    return res.status(400).json({ error: 'Name must be 1-30 characters' });
-  }
-
   const supabase = getServerSupabase();
 
-  // Check if user exists
-  const { data: existing } = await supabase
+  // Find user (case-insensitive name match)
+  const { data: user } = await supabase
     .from('users')
     .select('*')
-    .eq('name', cleanName)
+    .ilike('name', cleanName)
     .maybeSingle();
 
-  if (existing) {
-    // Login: verify password
-    const ok = await bcrypt.compare(password, existing.password_hash);
-    if (!ok) {
-      return res.status(401).json({ error: 'Invalid name or password' });
-    }
-    setSessionCookie(res, existing.id);
-    return res.json({ user: { id: existing.id, name: existing.name } });
+  if (!user || user.is_spectator) {
+    // Don't reveal whether user exists; also block spectator login via this endpoint
+    return res.status(401).json({ error: 'Invalid name or password' });
   }
 
-  // Register: create user
-  const hash = await bcrypt.hash(password, 10);
-  const { data: created, error } = await supabase
-    .from('users')
-    .insert({ name: cleanName, password_hash: hash })
-    .select()
-    .single();
-
-  if (error) {
-    return res.status(500).json({ error: 'Could not create account' });
+  const ok = await bcrypt.compare(password, user.password_hash);
+  if (!ok) {
+    return res.status(401).json({ error: 'Invalid name or password' });
   }
 
-  setSessionCookie(res, created.id);
-  return res.json({ user: { id: created.id, name: created.name } });
+  setSessionCookie(res, user.id);
+  return res.json({ user: { id: user.id, name: user.name } });
 }

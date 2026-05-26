@@ -5,11 +5,12 @@ import { millisecondsUntilNext7am } from '../lib/time';
 import imageCompression from 'browser-image-compression';
 
 export default function Today() {
-  const { user, loading } = useAuth();
+  const { user, isSpectator, loading } = useAuth();
   const [photos, setPhotos] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [countdown, setCountdown] = useState('');
-  const fileRef = useRef(null);
+  const cameraRef = useRef(null);
+  const libraryRef = useRef(null);
 
   async function load() {
     const r = await fetch('/api/photos/today');
@@ -23,7 +24,6 @@ export default function Today() {
     if (user) load();
   }, [user]);
 
-  // Countdown to next 07:00
   useEffect(() => {
     function tick() {
       const ms = millisecondsUntilNext7am();
@@ -66,7 +66,8 @@ export default function Today() {
       alert('Upload failed: ' + err.message);
     } finally {
       setUploading(false);
-      if (fileRef.current) fileRef.current.value = '';
+      if (cameraRef.current) cameraRef.current.value = '';
+      if (libraryRef.current) libraryRef.current.value = '';
     }
   }
 
@@ -78,6 +79,30 @@ export default function Today() {
 
   if (loading || !user) {
     return <Layout><div className="p-6 text-zinc-500">Loading...</div></Layout>;
+  }
+
+  // Spectator view of "Today"
+  if (isSpectator) {
+    return (
+      <Layout>
+        <div className="px-5 pt-6">
+          <div className="flex justify-between items-center mb-1">
+            <div>
+              <div className="text-zinc-500 text-xs uppercase tracking-widest">Mode</div>
+              <div className="text-2xl font-display tracking-wide">👁️ Spectator</div>
+            </div>
+            <button onClick={logout} className="text-xs text-zinc-500 underline">Log out</button>
+          </div>
+          <div className="mt-12 text-center">
+            <div className="text-zinc-500 text-xs uppercase tracking-widest mb-1">Reveal in</div>
+            <div className="text-3xl font-display tracking-widest text-orange-500">{countdown}</div>
+          </div>
+          <p className="text-zinc-500 text-sm text-center mt-12">
+            You're watching only. Head to Yesterday, Top, History, or Board to see the action.
+          </p>
+        </div>
+      </Layout>
+    );
   }
 
   const canUpload = photos.length < 3;
@@ -103,13 +128,24 @@ export default function Today() {
         </div>
 
         {canUpload && (
-          <button
-            onClick={() => fileRef.current?.click()}
-            disabled={uploading}
-            className="w-full py-6 border-2 border-dashed border-orange-500 rounded-2xl text-orange-500 font-bold uppercase tracking-widest disabled:opacity-50 active:bg-orange-500/10"
-          >
-            {uploading ? 'Uploading...' : '+ Upload Photo'}
-          </button>
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              onClick={() => cameraRef.current?.click()}
+              disabled={uploading}
+              className="py-5 border-2 border-dashed border-orange-500 rounded-2xl text-orange-500 font-bold uppercase tracking-wider disabled:opacity-50 active:bg-orange-500/10 flex flex-col items-center gap-1"
+            >
+              <span className="text-2xl">📷</span>
+              <span className="text-xs">{uploading ? '...' : 'Camera'}</span>
+            </button>
+            <button
+              onClick={() => libraryRef.current?.click()}
+              disabled={uploading}
+              className="py-5 border-2 border-dashed border-zinc-600 rounded-2xl text-zinc-300 font-bold uppercase tracking-wider disabled:opacity-50 active:bg-zinc-800 flex flex-col items-center gap-1"
+            >
+              <span className="text-2xl">🖼️</span>
+              <span className="text-xs">{uploading ? '...' : 'Library'}</span>
+            </button>
+          </div>
         )}
         {!canUpload && (
           <div className="text-center py-8 text-zinc-500 text-sm">
@@ -117,11 +153,20 @@ export default function Today() {
           </div>
         )}
 
+        {/* Camera input - forces back camera */}
         <input
-          ref={fileRef}
+          ref={cameraRef}
           type="file"
           accept="image/*"
           capture="environment"
+          onChange={handleFile}
+          className="hidden"
+        />
+        {/* Library input - opens photo library */}
+        <input
+          ref={libraryRef}
+          type="file"
+          accept="image/*"
           onChange={handleFile}
           className="hidden"
         />

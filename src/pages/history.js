@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import Layout from '../components/Layout';
+import PhotoViewer from '../components/PhotoViewer';
 import { useAuth } from '../lib/useAuth';
 import { formatDateLabel, formatTime } from '../lib/time';
 
@@ -7,6 +8,8 @@ export default function History() {
   const { user, loading } = useAuth();
   const [history, setHistory] = useState([]);
   const [expanded, setExpanded] = useState({});
+  const [viewerSrc, setViewerSrc] = useState(null);
+  const [viewerName, setViewerName] = useState('');
 
   useEffect(() => {
     if (user) {
@@ -21,7 +24,7 @@ export default function History() {
   if (loading || !user) return <Layout><div className="p-6 text-zinc-500">Loading...</div></Layout>;
 
   return (
-    <Layout>
+    <Layout hideNav={!!viewerSrc}>
       <div className="px-5 pt-6">
         <h1 className="font-display text-4xl tracking-wider mb-1">📚 History</h1>
         <p className="text-zinc-500 text-sm mb-6">Every photo, every day.</p>
@@ -45,8 +48,15 @@ export default function History() {
               {expanded[group.date] && (
                 <div className="p-3 grid grid-cols-2 gap-2">
                   {group.photos.map(p => (
-                    <div key={p.id} className="relative">
-                      <img src={p.image_url} alt="" className="w-full aspect-square object-cover rounded-lg savable-image" />
+                    <div
+                      key={p.id}
+                      className="relative cursor-pointer"
+                      onClick={() => {
+                        setViewerSrc(p.image_url);
+                        setViewerName(`${group.date}-${p.uploader_name}.jpg`);
+                      }}
+                    >
+                      <img src={p.image_url} alt="" className="w-full aspect-square object-cover rounded-lg" />
                       {p.won && (
                         <div className="absolute top-1 left-1 bg-yellow-500 text-black px-1.5 py-0.5 rounded text-xs font-bold">🏆</div>
                       )}
@@ -62,6 +72,14 @@ export default function History() {
           ))}
         </div>
       </div>
+
+      {viewerSrc && (
+        <PhotoViewer
+          src={viewerSrc}
+          filename={viewerName}
+          onClose={() => setViewerSrc(null)}
+        />
+      )}
     </Layout>
   );
 }

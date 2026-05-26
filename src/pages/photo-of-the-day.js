@@ -1,11 +1,14 @@
 import { useEffect, useState } from 'react';
 import Layout from '../components/Layout';
+import PhotoViewer from '../components/PhotoViewer';
 import { useAuth } from '../lib/useAuth';
 import { formatDateLabel } from '../lib/time';
 
 export default function POTY() {
   const { user, loading } = useAuth();
   const [winners, setWinners] = useState([]);
+  const [viewerSrc, setViewerSrc] = useState(null);
+  const [viewerName, setViewerName] = useState('');
 
   useEffect(() => {
     if (user) {
@@ -16,7 +19,7 @@ export default function POTY() {
   if (loading || !user) return <Layout><div className="p-6 text-zinc-500">Loading...</div></Layout>;
 
   return (
-    <Layout>
+    <Layout hideNav={!!viewerSrc}>
       <div className="px-5 pt-6">
         <h1 className="font-display text-4xl tracking-wider mb-1">🏆 Top Photos</h1>
         <p className="text-zinc-500 text-sm mb-6">The daily winners.</p>
@@ -35,13 +38,25 @@ export default function POTY() {
               <img
                 src={w.image_url}
                 alt=""
-                className="w-full rounded-xl savable-image"
+                onClick={() => {
+                  setViewerSrc(w.image_url);
+                  setViewerName(`top-${w.date}-${w.uploader_name}.jpg`);
+                }}
+                className="w-full rounded-xl cursor-pointer"
               />
               <div className="text-zinc-400 text-sm mt-2">by {w.uploader_name}</div>
             </div>
           ))}
         </div>
       </div>
+
+      {viewerSrc && (
+        <PhotoViewer
+          src={viewerSrc}
+          filename={viewerName}
+          onClose={() => setViewerSrc(null)}
+        />
+      )}
     </Layout>
   );
 }

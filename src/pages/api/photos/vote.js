@@ -11,9 +11,19 @@ export default async function handler(req, res) {
   if (!photoId) return res.status(400).json({ error: 'Missing photoId' });
 
   const supabase = getServerSupabase();
+
+  // Block spectators from voting
+  const { data: voter } = await supabase
+    .from('users')
+    .select('is_spectator')
+    .eq('id', userId)
+    .maybeSingle();
+  if (!voter || voter.is_spectator) {
+    return res.status(403).json({ error: 'Spectators cannot vote' });
+  }
+
   const today = getCurrentCycleDate();
 
-  // Get photo
   const { data: photo } = await supabase
     .from('photos')
     .select('*')
@@ -23,13 +33,11 @@ export default async function handler(req, res) {
 
   if (!photo) return res.status(404).json({ error: 'Photo not found in current feed' });
 
-  // Self-vote check (allowSelf is a dev override)
   const devMode = process.env.NEXT_PUBLIC_DEV_MODE === 'true';
   if (photo.user_id === userId && !(devMode && allowSelf)) {
     return res.status(400).json({ error: "Can't vote on your own photo" });
   }
 
-  // Get user's votes today
   const { data: myVotes } = await supabase
     .from('votes')
     .select('*')
@@ -37,7 +45,6 @@ export default async function handler(req, res) {
     .eq('vote_date', today)
     .order('created_at', { ascending: true });
 
-  // Already voted on this photo? -> remove vote
   const existingVote = (myVotes || []).find(v => v.photo_id === Number(photoId));
   if (existingVote) {
     await supabase.from('votes').delete().eq('id', existingVote.id);
@@ -48,12 +55,10 @@ export default async function handler(req, res) {
     return res.json({ action: 'removed' });
   }
 
-  // Need to reassign? (already 2 votes)
   let removedFromName = null;
   if ((myVotes || []).length >= 2) {
     const oldest = myVotes[0];
     await supabase.from('votes').delete().eq('id', oldest.id);
-    // Decrement old photo
     const { data: oldPhoto } = await supabase
       .from('photos')
       .select('vote_count, users(name)')
@@ -68,7 +73,6 @@ export default async function handler(req, res) {
     }
   }
 
-  // Add new vote
   await supabase.from('votes').insert({
     voter_id: userId,
     photo_id: Number(photoId),

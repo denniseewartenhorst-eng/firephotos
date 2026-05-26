@@ -4,12 +4,12 @@ import { useRouter } from 'next/router';
 export function useAuth() {
   const [user, setUser] = useState(null);
   const [isCrownHolder, setIsCrownHolder] = useState(false);
+  const [crownHolderName, setCrownHolderName] = useState(null);
   const [todaySticker, setTodaySticker] = useState('A');
   const [loading, setLoading] = useState(true);
   const router = useRouter();
 
   useEffect(() => {
-    // Trigger cycle check on every page load (self-healing)
     fetch('/api/cycle/check').catch(() => {});
 
     fetch('/api/auth/me')
@@ -20,13 +20,21 @@ export function useAuth() {
         } else {
           setUser(d.user);
           setIsCrownHolder(d.isCrownHolder);
+          setCrownHolderName(d.crownHolderName);
           setTodaySticker(d.todaySticker);
         }
         setLoading(false);
       });
   }, [router]);
 
-  return { user, isCrownHolder, todaySticker, loading };
+  return {
+    user,
+    isSpectator: user?.is_spectator || false,
+    isCrownHolder,
+    crownHolderName,
+    todaySticker,
+    loading,
+  };
 }
 
 export async function logout() {
